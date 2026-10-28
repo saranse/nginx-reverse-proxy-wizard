@@ -88,6 +88,12 @@ sudo ./add_asset_path.sh
 
 กรอก path จาก Browser DevTools → Network แล้วกรอก upstream URL ของเว็บปลายทาง สคริปต์จะสำรอง `/etc/nginx/conf.d/reverse_proxy.conf`, เพิ่ม route, ตรวจ `nginx -t` และ reload Nginx หากตรวจไม่ผ่านจะคืนไฟล์เดิม ใช้กับ config เดิมที่ Wizard สร้างได้โดยไม่ต้องตั้ง Wizard ใหม่ ส่วน config ที่มีหลาย `server` block จะหยุดไว้ให้ตรวจเอง การรัน Wizard รอบถัดไปจะสร้าง config ใหม่และเก็บ config ก่อนหน้าไว้ใน backup
 
+**สำคัญ:** URL ที่กรอกต้องเป็น URL ภายในของ backend ที่ตอบ resource นี้จริง เช่น ถ้า browser ขอ `/siem/logo.webp` และ backend ให้ไฟล์นี้ที่ `http://10.0.0.25:3000/siem/logo.webp` ให้กรอก URL backend ดังกล่าว อย่ากรอก URL หน้าเว็บ Nginx เช่น `http://app.example.com/siem/logo.webp` เพราะจะ proxy วนกลับเข้า Nginx และอาจเกิด `500` หรือ redirect loop สคริปต์จะปฏิเสธ upstream ที่ host ตรงกับ `server_name` ของ config นี้ แต่ควรตรวจว่า IP/โดเมน backend เป็นปลายทางภายในจริงด้วย
+
+สำหรับ path แบบไฟล์เดียว เช่น `/siem/logo.webp` ให้กรอก URL backend ที่มี path ของไฟล์ครบ ส่วน path แบบโฟลเดอร์ เช่น `/assets/` ให้กรอก URL base path ของ backend ที่ลงท้ายด้วย `/` เช่น `http://10.0.0.25:3000/assets/` เพื่อให้ path ใต้โฟลเดอร์ถูกส่งต่อได้
+
+ถ้าเข้า shell เป็น root อยู่แล้ว ให้รัน `./add_asset_path.sh` โดยไม่ต้องเติม `sudo`; ถ้าเข้าเป็นผู้ใช้ทั่วไปให้ใช้ `sudo ./add_asset_path.sh` หลังแก้ config เอง หากเป็น root ให้ตรวจและ reload ด้วย `nginx -t && systemctl reload nginx`.
+
 ถ้าใช้ Cloudflare Tunnel ให้กำหนด service ของ ingress เป็น `http://127.0.0.1:80` และ restart `cloudflared` หลังตั้งค่าเสร็จ DNS ของโดเมนต้องชี้เข้าระบบที่ให้บริการด้วย
 
 ## ไฟล์และการสำรองค่า

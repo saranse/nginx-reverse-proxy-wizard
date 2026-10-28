@@ -33,17 +33,34 @@ else
 fi
 if grep -Fqx "$location_line" "$CONF_FILE"; then die "มี location นี้อยู่แล้ว: /$public_path"; fi
 
-read -r -p 'Upstream URL ของเว็บปลายทาง (เช่น http://127.0.0.1:3000/app/): ' upstream_url
+read -r -p 'URL ปลายทางภายในที่ควรตอบ path นี้ (ห้ามใช้ URL หน้าเว็บ Nginx): ' upstream_url
 [[ $upstream_url != *\?* && $upstream_url != *\#* ]] || die 'Upstream ห้ามมี query string หรือ fragment'
 [[ $upstream_url =~ ^(https?)://(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+)(:[0-9]{1,5})?(/[^[:space:]]*)?$ ]] || die 'รูปแบบ upstream ไม่ถูกต้อง; ใช้ http(s)://host[:port][/base/path/]'
 scheme=${BASH_REMATCH[1]}
 authority=${BASH_REMATCH[2]}${BASH_REMATCH[3]}
-base_path=${BASH_REMATCH[4]:-/}
-[[ $base_path == /* ]] || base_path="/$base_path"
-[[ $base_path == */ ]] || base_path="$base_path/"
-rewrite_base=${base_path%/}
-origin="$scheme://$authority"
+target_path=${BASH_REMATCH[4]:-/}
+upstream_host=${BASH_REMATCH[2]#[}; upstream_host=${upstream_host%]}
+if [[ $is_exact == false && $target_path != */ ]]; then target_path="$target_path/"; fi
+target_url="$scheme://$authority$target_path"
 
+# Catch the common proxy loop: the upstream host is the same public hostname
+# configured on this Nginx virtual host.
+upstream_host_lc=$(printf '%s' "$upstream_host" | tr '[:upper:]' '[:lower:]')
+if awk -v host="$upstream_host_lc" '
+  /^[[:space:]]*server_name[[:space:]]/ {
+    line=$0
+    sub(/#.*/, "", line)
+    sub(/^[[:space:]]*server_name[[:space:]]+/, "", line)
+    n=split(line, names, /[[:space:]]+/)
+    for (i=1; i<=n; i++) {
+      gsub(/;/, "", names[i])
+      if (tolower(names[i]) == host) found=1
+    }
+  }
+  END { exit !found }
+' "$CONF_FILE"; then
+  die "Upstream host $upstream_host ตรงกับ server_name ของ Nginx นี้ อาจวนกลับเข้าตัวเอง; ใช้ IP/โดเมนและพอร์ตของ backend โดยตรง"
+fi
 tmp_block=$(mktemp)
 tmp_base=$(mktemp)
 tmp_conf=$(mktemp "${CONF_FILE}.XXXXXX")
@@ -53,9 +70,8 @@ trap cleanup EXIT
 
 {
   if [[ $is_exact == true ]]; then printf '    location = /%s {\n' "$public_path"; else printf '    location ^~ /%s/ {\n' "$public_path"; fi
-  if [[ -n $rewrite_base ]]; then printf '        rewrite ^ %s$uri break;\n' "$rewrite_base"; fi
   cat <<BLOCK
-        proxy_pass $origin;
+        proxy_pass $target_url;
         proxy_http_version 1.1;
         proxy_set_header Host \$proxy_host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -124,6 +140,6 @@ if ! systemctl reload nginx; then
   die "reload ไม่สำเร็จ; คืนคอนฟิกเดิมแล้ว (สำรองไว้ที่ $backup_file)"
 fi
 
-printf 'เพิ่ม path สำเร็จ: %s → %s\n' "$location_line" "$origin$base_path"
+printf 'เพิ่ม path สำเร็จ: %s → %s\n' "$location_line" "$target_url"
 printf 'สำรองคอนฟิกเดิม: %s\n' "$backup_file"
 printf 'ตำแหน่งคอนฟิก: %s\n' "$CONF_FILE"
