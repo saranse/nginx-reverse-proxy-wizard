@@ -394,7 +394,10 @@ BLOCK
 BLOCK
 }
 
-TMP_CONF=$(mktemp /etc/nginx/conf.d/.reverse_proxy.XXXXXX)
+# Some existing Nginx installations do not have conf.d until a config is added.
+# Create the target and backup directories before creating the temporary file.
+mkdir -p "$(dirname "$CONF_FILE")" "$BACKUP_DIR"
+TMP_CONF=$(mktemp "$(dirname "$CONF_FILE")/.reverse_proxy.XXXXXX")
 OLD_CONF=''
 if [[ -e $CONF_FILE ]]; then
   mkdir -p "$BACKUP_DIR"
