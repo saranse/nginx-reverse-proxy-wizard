@@ -286,6 +286,9 @@ if [[ ${REPLY,,} == y || ${REPLY,,} == yes ]]; then
   esac
 fi
 
+printf '\nPath คือ prefix ที่ผู้ใช้เปิด ส่วน Upstream คือ base path ของแอปหลังบ้าน\n'
+printf 'ตัวอย่าง: /porter/ → http://10.10.0.21/P_Transporter/; สคริปต์ส่งต่อทั้งเว็บและสร้าง alias /P_Transporter/ ให้อัตโนมัติเมื่อ path ไม่ชนกับเว็บอื่น\n'
+printf 'หากแอปเรียก API/asset ด้วย native path ของ backend ให้ตั้ง Path ภายนอกแยกจาก Upstream base path เช่น smt กับ http://10.10.0.21/siem/\n'
 read_value 'จำนวนเว็บใต้ subpath (เช่น 2; สูงสุด 20): ' '0'
 APP_COUNT=$REPLY
 [[ $APP_COUNT =~ ^[0-9]{1,2}$ ]] && (( APP_COUNT <= 20 )) || die 'จำนวนเว็บต้องเป็น 0 ถึง 20'
@@ -294,11 +297,11 @@ APP_PATHS=(); APP_URLS=(); APP_HOSTS=(); APP_BASE_PATHS=()
 APP_ASSET_ORIGINS=()
 for ((i=1; i<=APP_COUNT; i++)); do
   printf '\nเว็บลูก #%d\n' "$i"
-  read_value '  Path (เช่น report): ' ''
+  read_value '  Path ภายนอกที่ผู้ใช้เปิด (เช่น report หรือ porter): ' ''
   path=${REPLY#/}; path=${path%/}
   [[ $path =~ ^[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$ ]] || die 'Path ใช้ได้เฉพาะตัวอักษร/ตัวเลข . _ ~ - และ /'
   for existing in "${APP_PATHS[@]-}"; do [[ $existing != "$path" ]] || die "Path ซ้ำ: /$path/"; done
-  read_value '  Upstream base URL (เช่น https://reports.example.net/ หรือ http://192.0.2.20:8080/remote/; ไม่ใส่ ?query): ' ''
+  read_value '  URL และ base path ของแอปหลังบ้าน (เช่น http://192.0.2.20:8080/remote/; ไม่ใส่ ?query): ' ''
   url=$REPLY
   parse_upstream "$url" || die 'Upstream base URL ไม่ถูกต้อง; ใช้ http(s)://host[:port][/base/path/] โดยไม่ใส่ query string หรือ fragment'
   host=$UPSTREAM_HOST

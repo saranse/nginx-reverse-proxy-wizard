@@ -24,7 +24,7 @@
 
 - Linux ที่ใช้ `systemd`
 - รันด้วย `sudo` หรือ root
-- ติดตั้ง Nginx เองหรือใช้ระบบติดตั้งอัตโนมัติของสคริปต์บน Ubuntu/Debian, Linux Mint, Pop!_OS และตระกูล RHEL ที่รองรับ (เช่น AlmaLinux, Rocky Linux, RHEL, CentOS, Fedora, Oracle Linux)
+- ติดตั้ง Nginx เองหรือใช้ระบบติดตั้งอัตโนมัติของสคริปต์บน Ubuntu, Debian, Linux Mint, Pop!_OS, AlmaLinux, Rocky Linux, RHEL, CentOS, Fedora และ Oracle Linux
 - upstream ของแต่ละเว็บต้องเข้าถึงได้จากเครื่อง Nginx และต้องชี้ไปยังแอปหลังบ้าน ไม่ใช่ IP/พอร์ตรับเว็บของ Nginx เอง
 - DNS/Cloudflare/Tunnel และ TLS certificate ต้องเตรียมตามรูปแบบที่เลือก
 
@@ -58,6 +58,19 @@ sudo ./setup_reverse_proxy.sh
 5. **Upstream ของเว็บหลัก** ต้องเป็น IP/พอร์ตของแอปหลังบ้าน เช่น `http://127.0.0.1:3000/`; อย่าใส่ URL หน้าเว็บของ Nginx เอง เพราะจะเกิดการวนกลับ
 
 ใส่ upstream ในรูปแบบ `http://host[:port][/base/path/]` หรือ `https://host[:port][/base/path/]` ห้ามมี query string หรือ fragment (`?` หรือ `#`). ตัวอย่าง IP ในเอกสารนี้ใช้ช่วงที่สงวนไว้สำหรับตัวอย่างเท่านั้น
+
+## เพิ่มเว็บใต้ subpath
+
+ใช้ `setup_reverse_proxy.sh` เมื่อต้องการเพิ่มเว็บลูกหรือ subpath ใหม่ สคริปต์รองรับเว็บลูกได้สูงสุด 20 รายการ โดยถามจำนวนเว็บทั้งหมด แล้วให้กรอก Path ภายนอกและ Upstream base URL ของแต่ละเว็บ
+
+- **Path ภายนอก** คือ prefix ที่ผู้ใช้เปิด เช่น `porter`
+- **Upstream base URL** คือ URL และ path ของแอปหลังบ้าน เช่น `http://10.10.0.21/P_Transporter/`
+
+สคริปต์จะส่งต่อทุก path ใต้ prefix และสร้าง native-path alias จาก upstream base path ให้อัตโนมัติเมื่อไม่ชนกับ Path ของเว็บอื่น ตัวอย่างเช่น `/porter/` ไปยัง backend `/P_Transporter/` พร้อม alias `/P_Transporter/` สำหรับ API และ asset ที่แอปเรียกด้วย path ภายในของตัวเอง
+
+หากต้องเพิ่ม subpath ภายหลัง ให้ดึงโค้ดล่าสุดและรัน Wizard ใหม่ จากนั้นกรอกจำนวนและข้อมูลเว็บลูก **ทั้งหมดที่ต้องการใช้งาน** รวมเว็บเดิมด้วย เพราะ Wizard สร้างไฟล์ config ใหม่ทั้งไฟล์และสำรองไฟล์ก่อนหน้าไว้ที่ `/etc/nginx/backup/` ตัวอย่างเมื่อมีเว็บลูก 3 เว็บ ให้ใส่จำนวน `3` แล้วกรอกทั้งสามรายการ
+
+`add_asset_path.sh` ใช้สำหรับ route เฉพาะกรณียกเว้นที่ path บางรายการต้องไปคนละปลายทาง ไม่ใช่วิธีหลักสำหรับเพิ่มเว็บลูกหรือเปิด path ทั้งชุด
 
 ## ตัวอย่างการตั้งค่า
 
