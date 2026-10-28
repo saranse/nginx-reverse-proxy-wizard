@@ -11,7 +11,7 @@
 ## ความสามารถ
 
 - ติดตั้ง Nginx และเครื่องมือดูพอร์ตเมื่อยังไม่มี
-- เลือก Cloudflare/Tunnel, HTTP หรือ HTTPS ที่ Nginx; โหมด HTTPS จะค้นหา certificate ที่ตรงกับโดเมนในตำแหน่งมาตรฐานให้อัตโนมัติ
+- เลือก HTTP หรือ HTTPS ที่ Nginx; โหมด HTTPS จะค้นหา certificate ที่ตรงกับโดเมนในตำแหน่งมาตรฐานให้อัตโนมัติ
 - ตั้งค่า upstream หลัก และเว็บเพิ่มเติมใต้ subpath ได้สูงสุด 20 เว็บ
 - ส่งต่อ WebSocket และ forwarding headers พร้อมเปิด TLS SNI สำหรับ upstream HTTPS
 - สร้าง alias สำหรับ base path ของ upstream และ route browser assets โดยดู `Sec-Fetch-Dest` พร้อม fallback จากนามสกุลไฟล์ จึงไม่ต้องระบุชื่อโฟลเดอร์หรือชื่อรูปไว้ล่วงหน้า
@@ -26,7 +26,7 @@
 - รันด้วย `sudo` หรือ root
 - ติดตั้ง Nginx เองหรือใช้ระบบติดตั้งอัตโนมัติของสคริปต์บน Ubuntu, Debian, Linux Mint, Pop!_OS, AlmaLinux, Rocky Linux, RHEL, CentOS, Fedora และ Oracle Linux
 - upstream ของแต่ละเว็บต้องเข้าถึงได้จากเครื่อง Nginx และต้องชี้ไปยังแอปหลังบ้าน ไม่ใช่ IP/พอร์ตรับเว็บของ Nginx เอง
-- DNS/Cloudflare/Tunnel และ TLS certificate ต้องเตรียมตามรูปแบบที่เลือก
+- DNS และ TLS certificate ต้องเตรียมตามรูปแบบที่เลือก
 
 สคริปต์ไม่รองรับการติดตั้งอัตโนมัติบน Linux distribution อื่น แต่ถ้ามี Nginx และ `systemd` อยู่แล้ว อาจใช้งานได้หลังตรวจสอบ environment ด้วยตนเอง
 
@@ -49,10 +49,9 @@ sudo ./setup_reverse_proxy.sh
 
 1. **โดเมนหน้าเว็บ** เช่น `app.example.com`
 2. **รูปแบบการเชื่อมต่อเข้า Nginx**
-   - ตัวเลือก 1: ผู้ใช้เข้า HTTPS ผ่าน Cloudflare WAF/Tunnel แล้ว Tunnel ส่ง HTTP มาที่ Nginx พอร์ต 80 (ค่าเริ่มต้น)
-   - ตัวเลือก 2: HTTP เข้า Nginx พอร์ต 80
-   - ตัวเลือก 3: Nginx รับ HTTPS ที่พอร์ต 443; สคริปต์ค้นหา certificate/key ของโดเมนให้อัตโนมัติ หากไม่พบจึงให้ระบุพาธเอง
-   - ตัวเลือก 4: HTTP บนพอร์ตอื่น เช่น 8080; ใช้เมื่อ Tunnel หรือระบบด้านหน้าส่งมายังพอร์ตนั้น
+   - ตัวเลือก 1: HTTP เข้า Nginx พอร์ต 80 (ค่าเริ่มต้น)
+   - ตัวเลือก 2: Nginx รับ HTTPS ที่พอร์ต 443; สคริปต์ค้นหา certificate/key ของโดเมนให้อัตโนมัติ หากไม่พบจึงให้ระบุพาธเอง
+   - ตัวเลือก 3: HTTP บนพอร์ตอื่น เช่น 8080
 3. **Upstream หลัก** เช่น `http://127.0.0.1:3000/` หรือ `http://127.0.0.1:3000/app/`
 4. **เว็บเพิ่มเติม** (ถ้ามี): path ภายนอก เช่น `report` และ URL ต้นทาง เช่น `http://192.0.2.20:8080/remote/`
 5. **Upstream ของเว็บหลัก** ต้องเป็น IP/พอร์ตของแอปหลังบ้าน เช่น `http://127.0.0.1:3000/`; อย่าใส่ URL หน้าเว็บของ Nginx เอง เพราะจะเกิดการวนกลับ
@@ -107,7 +106,7 @@ sudo ./add_asset_path.sh
 
 ถ้าเข้า shell เป็น root อยู่แล้ว ให้รัน `./add_asset_path.sh` โดยไม่ต้องเติม `sudo`; ถ้าเข้าเป็นผู้ใช้ทั่วไปให้ใช้ `sudo ./add_asset_path.sh` หลังแก้ config เอง หากเป็น root ให้ตรวจและ reload ด้วย `nginx -t && systemctl reload nginx`.
 
-ถ้าใช้ Cloudflare Tunnel ให้กำหนด service ของ ingress เป็น `http://127.0.0.1:80` และ restart `cloudflared` หลังตั้งค่าเสร็จ DNS ของโดเมนต้องชี้เข้าระบบที่ให้บริการด้วย
+ตรวจให้ DNS ของโดเมนชี้มายังระบบที่ให้บริการ และเปิดพอร์ต Nginx ที่เลือกให้เข้าถึงได้
 
 ## ไฟล์และการสำรองค่า
 
@@ -171,7 +170,7 @@ sudo ss -ltnp
 - หากพอร์ตถูกใช้งานอยู่ ให้เลือกพอร์ต Nginx อื่นหรือจัดการ service ที่ครอบครองพอร์ตนั้นก่อน
 - หากเปิด HTTPS ที่ Nginx ตรวจว่า certificate/key ถูกต้องและอ่านได้ รวมถึง certificate ตรงกับโดเมน
 - หากใช้ SELinux แล้ว proxy ไป upstream ไม่ได้ ให้ตรวจ boolean `httpd_can_network_connect` และสิทธิ์พอร์ตของ SELinux
-- ตรวจให้แน่ใจว่า firewall และระบบ Cloudflare/Tunnel อนุญาตพอร์ตที่เลือก
+- ตรวจให้แน่ใจว่า firewall อนุญาตพอร์ตที่เลือก
 
 ## ความปลอดภัยและขอบเขต
 

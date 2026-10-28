@@ -85,7 +85,7 @@ if command -v nginx >/dev/null 2>&1 || [[ -d /etc/nginx ]]; then
         ;;
     esac
     rm -rf /etc/nginx
-    info 'ล้างแพ็กเกจและคอนฟิก Nginx เดิมแล้ว; ไม่ลบเว็บคอนเทนต์หรือ Cloudflare Tunnel'
+    info 'ล้างแพ็กเกจและคอนฟิก Nginx เดิมแล้ว; ไม่ลบเว็บคอนเทนต์'
   else
     info 'เก็บ Nginx เดิมไว้ และจะปรับเฉพาะ reverse_proxy.conf ตามขั้นตอนปกติ'
   fi
@@ -210,16 +210,14 @@ DOMAIN=$REPLY
 [[ $DOMAIN =~ ^[A-Za-z0-9*._-]+$ ]] || die 'รูปแบบโดเมนไม่ถูกต้อง'
 
 printf '\nเลือกวิธีรับเว็บ:\n'
-printf '  [1] Cloudflare/Tunnel → Nginx HTTP 80 (แนะนำ, ไม่ใช้ certificate ที่เครื่องนี้)\n'
-printf '  [2] HTTP ปกติ → Nginx 80\n'
-printf '  [3] HTTPS ที่ Nginx 443 (ค้นหา certificate ให้อัตโนมัติ)\n'
-printf '  [4] HTTP พอร์ตอื่น เช่น 8080\n'
-read_value 'เลือก [1/2/3/4] (ค่าเริ่มต้น 1): ' '1'
+printf '  [1] HTTP → Nginx 80\n'
+printf '  [2] HTTPS → Nginx 443 (ค้นหา certificate ให้อัตโนมัติ)\n'
+printf '  [3] HTTP พอร์ตกำหนดเอง เช่น 8080\n'
+read_value 'เลือก [1/2/3] (ค่าเริ่มต้น 1): ' '1'
 case $REPLY in
-  1) LISTEN_PORT=80; LISTEN_SCHEME=http; PUBLIC_SCHEME=https; FORWARDED_PROTO_VALUE=https; TLS_MODE=off ;;
-  2) LISTEN_PORT=80; LISTEN_SCHEME=http; PUBLIC_SCHEME=http; FORWARDED_PROTO_VALUE='$scheme'; TLS_MODE=off ;;
-  3) LISTEN_PORT=443; LISTEN_SCHEME=https; PUBLIC_SCHEME=https; FORWARDED_PROTO_VALUE='$scheme'; TLS_MODE=on ;;
-  4) read_value 'ระบุพอร์ต Nginx (ห้ามใช้พอร์ตแอป เช่น 3000 หากแอปใช้พอร์ตนั้น): ' ''; LISTEN_PORT=$REPLY; LISTEN_SCHEME=http; PUBLIC_SCHEME=https; FORWARDED_PROTO_VALUE=https; TLS_MODE=off ;;
+  1) LISTEN_PORT=80; LISTEN_SCHEME=http; PUBLIC_SCHEME=http; FORWARDED_PROTO_VALUE='$scheme'; TLS_MODE=off ;;
+  2) LISTEN_PORT=443; LISTEN_SCHEME=https; PUBLIC_SCHEME=https; FORWARDED_PROTO_VALUE='$scheme'; TLS_MODE=on ;;
+  3) read_value 'ระบุพอร์ต Nginx (ห้ามใช้พอร์ตแอป เช่น 3000 หากแอปใช้พอร์ตนั้น): ' ''; LISTEN_PORT=$REPLY; LISTEN_SCHEME=http; PUBLIC_SCHEME=http; FORWARDED_PROTO_VALUE='$scheme'; TLS_MODE=off ;;
   *) die 'ตัวเลือกการเชื่อมต่อไม่ถูกต้อง' ;;
 esac
 valid_port "$LISTEN_PORT" || die 'พอร์ตต้องเป็นเลข 1 ถึง 65535'
@@ -251,7 +249,7 @@ if [[ $TLS_MODE == on ]]; then
     info "พบ certificate ของ $DOMAIN แล้ว: $CERT_FILE"
   else
     warn "ค้นหา certificate ของ $DOMAIN ในตำแหน่งมาตรฐานไม่พบ หรือ certificate ไม่ครอบคลุมชื่อนี้"
-    printf 'ระบุพาธ certificate และ private key เอง หรือเลือก HTTPS ผ่าน Cloudflare/Tunnel แทน\n'
+    printf 'ระบุพาธ certificate และ private key ของโดเมนนี้\n'
     read_value 'พาธ certificate: ' ''
     CERT_FILE=$REPLY
     read_value 'พาธ private key: ' ''
@@ -574,7 +572,6 @@ printf 'Nginx รับคำขอที่: %s://127.0.0.1:%s/\n' "$LISTEN_SCH
 printf 'เว็บหลัก: %s\n' "$MAIN_URL"
 for ((i=0; i<APP_COUNT; i++)); do printf 'เว็บลูก: %s://%s/%s/ → %s\n' "$PUBLIC_SCHEME" "$DOMAIN" "${APP_PATHS[$i]}" "${APP_URLS[$i]}"; done
 [[ -n $OLD_CONF ]] && printf 'สำรองคอนฟิกเดิม: %s\n' "$OLD_CONF"
-printf '\nถ้าใช้ Cloudflare Tunnel ให้กำหนด ingress service เป็น http://127.0.0.1:%s แล้ว restart cloudflared\n' "$LISTEN_PORT"
 printf 'ตรวจ log: sudo journalctl -u nginx -n 50 --no-pager\n'
 printf 'คอนฟิก: %s\n' "$CONF_FILE"
 printf 'หากต้องแก้คอนฟิกเอง: sudo nano %s\n' "$CONF_FILE"
