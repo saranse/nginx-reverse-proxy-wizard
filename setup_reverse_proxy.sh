@@ -86,19 +86,49 @@ read_value() { local prompt=$1 default=${2-} value; read -r -p "$prompt" value |
 valid_port() { [[ $1 =~ ^[0-9]{1,5}$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 )); }
 valid_host() { [[ $1 =~ ^([A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])$ ]]; }
 parse_upstream() {
-  local value=$1
+  local value=$1 parsed_port upstream_scheme
   # These are upstream base URLs. Query strings/fragments would be fixed for every
   # request and interfere with Nginx URI-prefix replacement, so reject them here.
   [[ $value != *\?* && $value != *\#* ]] || return 1
   [[ $value =~ ^https?://(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+)(:[0-9]{1,5})?(/[^[:space:]]*)?$ ]] || return 1
   UPSTREAM_HOST=${BASH_REMATCH[1]}
+  parsed_port=${BASH_REMATCH[2]#:}
   UPSTREAM_BASE_PATH=${BASH_REMATCH[3]:-/}
+  upstream_scheme=${value%%://*}
+  if [[ -n $parsed_port ]]; then UPSTREAM_PORT=$parsed_port
+  elif [[ $upstream_scheme == https ]]; then UPSTREAM_PORT=443
+  else UPSTREAM_PORT=80
+  fi
   [[ $UPSTREAM_BASE_PATH == /* ]] || UPSTREAM_BASE_PATH="/$UPSTREAM_BASE_PATH"
   [[ $UPSTREAM_BASE_PATH == */ ]] || UPSTREAM_BASE_PATH="$UPSTREAM_BASE_PATH/"
-  if [[ -n ${BASH_REMATCH[2]} ]]; then
-    local upstream_port=${BASH_REMATCH[2]#:}
-    valid_port "$upstream_port" || return 1
+  if [[ -n $parsed_port ]]; then
+    valid_port "$parsed_port" || return 1
   fi
+}
+
+find_certificate_pair() {
+  local cert key candidate
+  local -a candidates=(
+    "/etc/letsencrypt/live/$DOMAIN/fullchain.pem|/etc/letsencrypt/live/$DOMAIN/privkey.pem"
+    "/etc/letsencrypt/live/$DOMAIN/cert.pem|/etc/letsencrypt/live/$DOMAIN/privkey.pem"
+    "/etc/nginx/ssl/$DOMAIN.crt|/etc/nginx/ssl/$DOMAIN.key"
+    "/etc/nginx/ssl/$DOMAIN/fullchain.pem|/etc/nginx/ssl/$DOMAIN/privkey.pem"
+    "/etc/ssl/certs/$DOMAIN.pem|/etc/ssl/private/$DOMAIN.key"
+    "/etc/ssl/certs/$DOMAIN.crt|/etc/ssl/private/$DOMAIN.key"
+  )
+  for candidate in "${candidates[@]}"; do
+    cert=${candidate%%|*}; key=${candidate#*|}
+    if [[ -r $cert && -r $key ]] && openssl x509 -in "$cert" -noout >/dev/null 2>&1 && openssl pkey -in "$key" -noout >/dev/null 2>&1; then
+      if [[ $DOMAIN =~ ^[0-9.]+$ ]]; then
+        openssl x509 -in "$cert" -noout -checkip "$DOMAIN" >/dev/null 2>&1 || continue
+      else
+        openssl x509 -in "$cert" -noout -checkhost "$DOMAIN" >/dev/null 2>&1 || continue
+      fi
+      CERT_FILE=$cert; KEY_FILE=$key
+      return 0
+    fi
+  done
+  return 1
 }
 
 # Allow Nginx to proxy to upstreams under SELinux. Add custom listen ports when semanage exists.
@@ -136,11 +166,11 @@ read_value 'โดเมนที่ผู้ใช้จะเปิด (เช
 DOMAIN=$REPLY
 [[ $DOMAIN =~ ^[A-Za-z0-9*._-]+$ ]] || die 'รูปแบบโดเมนไม่ถูกต้อง'
 
-printf '\nเลือกการเชื่อมต่อระหว่าง Cloudflare กับ Nginx (แยกจากพอร์ตแอป เช่น 3000):\n'
-printf '  [1] เว็บ HTTPS ผ่าน Cloudflare WAF/Tunnel → Nginx HTTP 80 (แนะนำ, ไม่ต้องใส่ certificate)\n'
-printf '  [2] เว็บ HTTP → Nginx HTTP 80\n'
-printf '  [3] HTTPS ให้ Nginx รับเองที่ 443 (ต้องใส่ certificate)\n'
-printf '  [4] HTTP พอร์ตกำหนดเองผ่าน Cloudflare/Tunnel เช่น 8080 (ไม่ต้องใส่ certificate)\n'
+printf '\nเลือกวิธีรับเว็บ:\n'
+printf '  [1] Cloudflare/Tunnel → Nginx HTTP 80 (แนะนำ, ไม่ใช้ certificate ที่เครื่องนี้)\n'
+printf '  [2] HTTP ปกติ → Nginx 80\n'
+printf '  [3] HTTPS ที่ Nginx 443 (ค้นหา certificate ให้อัตโนมัติ)\n'
+printf '  [4] HTTP พอร์ตอื่น เช่น 8080\n'
 read_value 'เลือก [1/2/3/4] (ค่าเริ่มต้น 1): ' '1'
 case $REPLY in
   1) LISTEN_PORT=80; LISTEN_SCHEME=http; PUBLIC_SCHEME=https; FORWARDED_PROTO_VALUE=https; TLS_MODE=off ;;
@@ -174,38 +204,44 @@ if command -v ss >/dev/null 2>&1; then
 fi
 
 if [[ $TLS_MODE == on ]]; then
-  warn 'HTTPS ต้องใช้ certificate/key ที่ถูกต้อง; สคริปต์จะไม่สร้าง self-signed certificate ให้อัตโนมัติ'
-  read_value 'พาธ certificate (เช่น /etc/letsencrypt/live/app.example.com/fullchain.pem): ' ''
-  CERT_FILE=$REPLY
-  read_value 'พาธ private key (เช่น /etc/letsencrypt/live/app.example.com/privkey.pem): ' ''
-  KEY_FILE=$REPLY
+  if command -v openssl >/dev/null 2>&1 && find_certificate_pair; then
+    info "พบ certificate ของ $DOMAIN แล้ว: $CERT_FILE"
+  else
+    warn "ค้นหา certificate ของ $DOMAIN ในตำแหน่งมาตรฐานไม่พบ หรือ certificate ไม่ครอบคลุมชื่อนี้"
+    printf 'ระบุพาธ certificate และ private key เอง หรือเลือก HTTPS ผ่าน Cloudflare/Tunnel แทน\n'
+    read_value 'พาธ certificate: ' ''
+    CERT_FILE=$REPLY
+    read_value 'พาธ private key: ' ''
+    KEY_FILE=$REPLY
+  fi
   [[ -r $CERT_FILE && -r $KEY_FILE ]] || die 'อ่าน certificate หรือ private key ไม่ได้'
 fi
 
 printf '\nเว็บหลักที่ /:\n'
-printf 'ใส่ upstream URL และ base path ถ้ามี เช่น http://127.0.0.1:3000/siem/fortisiem/ หรือ https://portal.example.net/\n'
+printf 'ใส่ URL ของแอปหลังบ้าน (IP/พอร์ตของแอป) ห้ามใส่ IP/พอร์ตของ Nginx เครื่องนี้\n'
+printf 'ตัวอย่าง: http://192.168.250.250:3000/siem/fortisiem/\n'
 read_value 'URL เว็บหลัก (ไม่ใส่ query string): ' 'http://127.0.0.1:3000/'
 MAIN_URL=$REPLY
 parse_upstream "$MAIN_URL" || die 'URL เว็บหลักไม่ถูกต้อง; ใช้ http(s)://host[:port][/base/path/] โดยไม่ใส่ query string หรือ fragment'
 MAIN_UPSTREAM_HOST=$UPSTREAM_HOST
+MAIN_UPSTREAM_PORT=$UPSTREAM_PORT
 MAIN_BASE_PATH=$UPSTREAM_BASE_PATH
-if [[ ${MAIN_UPSTREAM_HOST,,} == ${DOMAIN,,} ]]; then
-  warn "upstream หลักใช้โดเมนเดียวกับเว็บหน้าบ้าน ($DOMAIN) อาจทำให้ Cloudflare Tunnel/Nginx วนกลับและเกิด 404"
-  printf 'แนะนำ URL ภายในของแอป เช่น http://127.0.0.1:3000/siem/fortisiem/\n'
-  read_value 'ยืนยันใช้โดเมนเดียวกันต่อหรือไม่? [y/N]: ' 'N'
-  [[ ${REPLY,,} == y || ${REPLY,,} == yes ]] || die 'ยกเลิก กรุณาระบุ upstream ภายในหรือโดเมนต้นทางที่ถูกต้อง'
+if [[ ${MAIN_UPSTREAM_HOST,,} == ${DOMAIN,,} && $MAIN_UPSTREAM_PORT == "$LISTEN_PORT" ]]; then
+  die "Upstream ชี้กลับมาที่ Nginx เครื่องนี้ ($DOMAIN:$LISTEN_PORT) กรุณาใส่ IP/พอร์ตของแอปหลังบ้าน เช่น http://127.0.0.1:3000/ หรือ http://192.168.250.250:3000/"
 fi
 
-printf '\nHost header ของเว็บหลัก:\n  [1] Auto (domain upstream ใช้ชื่อ upstream; IP ใช้โดเมนหน้าบ้าน)\n  [2] ส่งโดเมนหน้าบ้าน\n  [3] ส่งชื่อ upstream\n  [4] ระบุเอง\n'
-read_value 'เลือก [1/2/3/4] (ค่าเริ่มต้น 1): ' '1'
-MAIN_HOST_MODE=$REPLY
-case $MAIN_HOST_MODE in
-  1) if [[ $MAIN_UPSTREAM_HOST =~ ^[0-9.]+$ || $MAIN_UPSTREAM_HOST == \[*\] ]]; then MAIN_HOST_HEADER='$host'; else MAIN_HOST_HEADER='$proxy_host'; fi ;;
-  2) MAIN_HOST_HEADER='$host' ;;
-  3) MAIN_HOST_HEADER='$proxy_host' ;;
-  4) read_value 'Host header (เช่น app.example.com): ' '' ; valid_host "$REPLY" || die 'Host header ไม่ถูกต้อง'; MAIN_HOST_HEADER=$REPLY ;;
-  *) die 'ตัวเลือก Host header ไม่ถูกต้อง' ;;
-esac
+if [[ $MAIN_UPSTREAM_HOST =~ ^[0-9.]+$ || $MAIN_UPSTREAM_HOST == \[*\] ]]; then MAIN_HOST_HEADER='$host'; else MAIN_HOST_HEADER='$proxy_host'; fi
+read_value 'ต้องการตั้ง Host header เองหรือไม่? [y/N]: ' 'N'
+if [[ ${REPLY,,} == y || ${REPLY,,} == yes ]]; then
+  printf '  [1] ส่งโดเมนหน้าบ้าน  [2] ส่งชื่อ upstream  [3] ระบุเอง\n'
+  read_value 'เลือก [1/2/3] (ค่าเริ่มต้น 1): ' '1'
+  case $REPLY in
+    1) MAIN_HOST_HEADER='$host' ;;
+    2) MAIN_HOST_HEADER='$proxy_host' ;;
+    3) read_value 'Host header (เช่น app.example.com): ' '' ; valid_host "$REPLY" || die 'Host header ไม่ถูกต้อง'; MAIN_HOST_HEADER=$REPLY ;;
+    *) die 'ตัวเลือก Host header ไม่ถูกต้อง' ;;
+  esac
+fi
 
 read_value 'จำนวนเว็บใต้ subpath (เช่น 2; สูงสุด 20): ' '0'
 APP_COUNT=$REPLY
