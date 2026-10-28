@@ -355,7 +355,10 @@ BUFFERS
       if [[ $main_native == "$configured_path" || $main_native == "$configured_path/"* || $configured_path == "$main_native/"* ]]; then main_alias_conflict=true; fi
     done
     if [[ $main_alias_conflict == false ]]; then
-      printf '\n    location = /%s { return 301 /%s/$is_args$args; }\n' "$main_native" "$main_native"
+      # Proxy the exact native URL as-is. Redirecting it to a trailing slash can
+      # loop when the upstream app redirects back to its slashless canonical URL.
+      main_exact_url=${MAIN_URL%/}
+      proxy_block "$main_exact_url" "$MAIN_HOST_HEADER" "= /$main_native" false
       proxy_block "$MAIN_URL" "$MAIN_HOST_HEADER" "^~ /$main_native/" true
     else
       warn "ไม่ได้สร้าง native-path alias เว็บหลัก /$main_native/ เพราะชนกับ path เว็บลูกที่ตั้งไว้"
@@ -385,7 +388,10 @@ BUFFERS
       done
       if [[ $conflict == false ]]; then
         printf '\n    # Native upstream path alias. A more-specific alias can sit below the public child path.\n'
-        printf '    location = /%s { return 301 /%s/$is_args$args; }\n' "$native" "$native"
+        # Proxy the exact native URL as-is to avoid a slash redirect loop with apps
+        # whose canonical URL omits the trailing slash.
+        native_exact_url=${url%/}
+        proxy_block "$native_exact_url" "$header" "= /$native" false
         proxy_block "$url" "$header" "^~ /$native/" true
       else
         warn "ไม่ได้สร้าง native-path alias /$native/ เพราะชนกับ path เว็บลูกที่ตั้งไว้"
