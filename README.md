@@ -1,0 +1,103 @@
+# Nginx Reverse Proxy Setup Wizard
+
+สคริปต์ Bash แบบโต้ตอบสำหรับติดตั้ง Nginx (หากยังไม่มี) และสร้าง reverse proxy configuration สำหรับเว็บหลักกับเว็บเพิ่มเติมที่เผยแพร่ใต้ path เช่น `/report/` หรือ `/admin/` เหมาะกับเครื่อง Linux ที่ใช้ `systemd` และรองรับการติดตั้งอัตโนมัติบน Ubuntu/Debian และตระกูล RHEL ที่ระบุในสคริปต์
+
+> อ่านสคริปต์และตรวจค่าที่จะกรอกก่อนรันบนเครื่องจริง สคริปต์ทำงานด้วยสิทธิ์ root และแก้ไขการตั้งค่า Nginx รวมถึงอาจปรับ firewall/SELinux ตามสภาพแวดล้อม
+
+## ความสามารถ
+
+- ติดตั้ง Nginx และเครื่องมือดูพอร์ตเมื่อยังไม่มี
+- เลือกให้ Nginx รับ HTTP ที่พอร์ต 80, HTTPS ที่ 443 หรือ HTTP บนพอร์ตที่กำหนดเอง
+- ตั้งค่า upstream หลัก และเว็บเพิ่มเติมใต้ subpath ได้สูงสุด 20 เว็บ
+- ส่งต่อ WebSocket และ forwarding headers พร้อมเปิด TLS SNI สำหรับ upstream HTTPS
+- สร้าง alias สำหรับ base path ของ upstream และเลือกเปิดการ route ไฟล์/คำขอที่ใช้ root-relative URL โดยอาศัย Referer
+- สำรอง reverse proxy config เดิมก่อนแทนที่ และทดสอบด้วย `nginx -t` ก่อน reload
+- เปิดเฉพาะพอร์ตที่เลือกใน UFW/firewalld เมื่อ firewall นั้นเปิดใช้อยู่แล้ว โดยไม่เปิด firewall ให้เอง
+- รองรับการตั้งค่า SELinux เบื้องต้นเมื่อพบเครื่องมือที่เกี่ยวข้อง
+
+## ข้อกำหนด
+
+- Linux ที่ใช้ `systemd`
+- รันด้วย `sudo` หรือ root
+- ติดตั้ง Nginx เองหรือใช้ระบบติดตั้งอัตโนมัติของสคริปต์บน Ubuntu/Debian, Linux Mint, Pop!_OS และตระกูล RHEL ที่รองรับ (เช่น AlmaLinux, Rocky Linux, RHEL, CentOS, Fedora, Oracle Linux)
+- upstream ของแต่ละเว็บต้องเข้าถึงได้จากเครื่อง Nginx
+- DNS/Cloudflare/Tunnel และ TLS certificate ต้องเตรียมตามรูปแบบที่เลือก
+
+สคริปต์ไม่รองรับการติดตั้งอัตโนมัติบน Linux distribution อื่น แต่ถ้ามี Nginx และ `systemd` อยู่แล้ว อาจใช้งานได้หลังตรวจสอบ environment ด้วยตนเอง
+
+## ติดตั้งและเริ่มใช้งาน
+
+ดาวน์โหลดไฟล์จาก repository แล้วรัน:
+
+```bash
+chmod +x setup_reverse_proxy.sh
+sudo ./setup_reverse_proxy.sh
+```
+
+สคริปต์จะถามข้อมูลทีละข้อ หากกด Enter จะใช้ค่าเริ่มต้นที่แสดงในวงเล็บเหลี่ยม/ท้าย prompt
+
+## ค่าที่ต้องเตรียม
+
+1. **โดเมนหน้าเว็บ** เช่น `app.example.com`
+2. **รูปแบบการเชื่อมต่อเข้า Nginx**
+   - ตัวเลือก 1: ผู้ใช้เข้า HTTPS ผ่าน Cloudflare WAF/Tunnel แล้ว Tunnel ส่ง HTTP มาที่ Nginx พอร์ต 80 (ค่าเริ่มต้น)
+   - ตัวเลือก 2: HTTP เข้า Nginx พอร์ต 80
+   - ตัวเลือก 3: Nginx รับ HTTPS ที่พอร์ต 443 ต้องมี certificate และ private key ที่อ่านได้
+   - ตัวเลือก 4: HTTP บนพอร์ตอื่น เช่น 8080; ใช้เมื่อ Tunnel หรือระบบด้านหน้าส่งมายังพอร์ตนั้น
+3. **Upstream หลัก** เช่น `http://127.0.0.1:3000/` หรือ `http://127.0.0.1:3000/siem/`
+4. **เว็บเพิ่มเติม** (ถ้ามี): path ภายนอก เช่น `report` และ URL ต้นทาง เช่น `http://192.0.2.20:8080/remote/`
+5. **ตัวเลือก Host header** ให้เลือกตามความต้องการของแอปต้นทาง
+
+ใส่ upstream ในรูปแบบ `http://host[:port][/base/path/]` หรือ `https://host[:port][/base/path/]` ห้ามมี query string หรือ fragment (`?` หรือ `#`). ตัวอย่าง IP ในเอกสารนี้ใช้ช่วงที่สงวนไว้สำหรับตัวอย่างเท่านั้น
+
+## ตัวอย่างการตั้งค่า
+
+สมมติว่า:
+
+- โดเมน: `app.example.com`
+- Cloudflare Tunnel ส่งคำขอมาที่ `http://127.0.0.1:80`
+- เว็บหลักอยู่ที่ `http://127.0.0.1:3000/`
+- เว็บรายงานต้องแสดงที่ `/report/` และต้นทางอยู่ที่ `http://192.0.2.20:8080/remote/`
+
+เลือกตัวเลือก 1, ใส่ upstream หลักตามตัวอย่าง, จำนวนเว็บเพิ่มเติมเป็น `1`, แล้วกรอก path `report` กับ upstream ของเว็บรายงาน จากนั้นยืนยันตัวเลือก asset routing ตามความเหมาะสมกับแอป
+
+ถ้าใช้ Cloudflare Tunnel ให้กำหนด service ของ ingress เป็น `http://127.0.0.1:80` และ restart `cloudflared` หลังตั้งค่าเสร็จ DNS ของโดเมนต้องชี้เข้าระบบที่ให้บริการด้วย
+
+## ไฟล์และการสำรองค่า
+
+สคริปต์สร้างหรือแทนที่:
+
+- Nginx config: `/etc/nginx/conf.d/reverse_proxy.conf`
+- สำเนา config เดิม: `/etc/nginx/backup/reverse_proxy.conf.<วันที่-เวลา>.bak`
+
+ก่อนแทนที่ไฟล์เดิม สคริปต์จะสำรองไว้ และจะคืนค่า config เดิมหาก `nginx -t` ไม่ผ่าน จากนั้นจึง enable และ reload/start Nginx
+
+หากเลือก purge Nginx เดิม สคริปต์จะขอให้พิมพ์ `PURGE NGINX` เพื่อยืนยัน และสำรอง `/etc/nginx` ไว้ใต้ `/root/nginx-backups/` ก่อนถอนแพ็กเกจและลบ `/etc/nginx` การ purge อาจกระทบ virtual hosts และค่าปรับแต่งเดิมทั้งหมด อ่านผลกระทบและเก็บสำรองไว้นอกเครื่องก่อนยืนยัน
+
+## ตรวจสอบและแก้ปัญหา
+
+```bash
+sudo nginx -t
+sudo systemctl status nginx --no-pager
+sudo journalctl -u nginx -n 50 --no-pager
+sudo ss -ltnp
+```
+
+- หากเห็น `502 Bad Gateway` ให้ตรวจว่า upstream ทำงานและเข้าถึงได้จากเครื่อง Nginx
+- หากเว็บใต้ path โหลด CSS/JS/API ไม่ครบ ให้ตรวจการตั้งค่า base path ของแอป ลองเปิด native upstream path หรือปิด auto-routing แล้วทดสอบตามรูปแบบ URL ของแอป
+- หากพอร์ตถูกใช้งานอยู่ ให้เลือกพอร์ต Nginx อื่นหรือจัดการ service ที่ครอบครองพอร์ตนั้นก่อน
+- หากเปิด HTTPS ที่ Nginx ตรวจว่า certificate/key ถูกต้องและอ่านได้ รวมถึง certificate ตรงกับโดเมน
+- หากใช้ SELinux แล้ว proxy ไป upstream ไม่ได้ ให้ตรวจ boolean `httpd_can_network_connect` และสิทธิ์พอร์ตของ SELinux
+- ตรวจให้แน่ใจว่า firewall และระบบ Cloudflare/Tunnel อนุญาตพอร์ตที่เลือก
+
+## ความปลอดภัยและขอบเขต
+
+- สคริปต์แก้เฉพาะไฟล์ `/etc/nginx/conf.d/reverse_proxy.conf` ในการตั้งค่าปกติ แต่การเลือก purge มีผลกว้างตามที่อธิบายข้างต้น
+- สคริปต์ไม่สร้าง certificate ให้ และไม่เปิดใช้งาน firewall เอง
+- ค่า `X-Forwarded-*`, Host header และการ route ไฟล์ตาม Referer อาจต้องปรับให้เหมาะกับแอปและโครงสร้างเครือข่ายจริง
+- อย่าใส่ข้อมูลลับ เช่น private key, token หรือรหัสผ่านลงใน repository
+- Repository นี้ยังไม่มีไฟล์ LICENSE; การเผยแพร่โค้ดไม่ได้กำหนดสิทธิ์การนำไปใช้ซ้ำโดยอัตโนมัติ
+
+## License
+
+ยังไม่ได้กำหนด กรุณาเพิ่มไฟล์ LICENSE หากต้องการระบุเงื่อนไขการใช้งานและการแจกจ่าย
