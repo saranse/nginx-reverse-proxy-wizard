@@ -77,6 +77,20 @@ sudo ./setup_reverse_proxy.sh
 
 ก่อนแทนที่ไฟล์เดิม สคริปต์จะสำรองไว้ และจะคืนค่า config เดิมหาก `nginx -t` ไม่ผ่าน จากนั้นจึง enable และ reload/start Nginx
 
+หากต้องแก้ Nginx config ด้วยตนเอง ให้เปิดไฟล์นี้:
+
+```bash
+sudo nano /etc/nginx/conf.d/reverse_proxy.conf
+```
+
+หลังบันทึก ให้ตรวจ syntax และ reload Nginx:
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+การรัน wizard รอบถัดไปจะสร้าง `reverse_proxy.conf` ใหม่ โดยเก็บสำเนาเดิมไว้ใน `/etc/nginx/backup/`
+
 หากเลือก purge Nginx เดิม สคริปต์จะขอให้พิมพ์ `PURGE NGINX` เพื่อยืนยัน และสำรอง `/etc/nginx` ไว้ใต้ `/root/nginx-backups/` ก่อนถอนแพ็กเกจและลบ `/etc/nginx` การ purge อาจกระทบ virtual hosts และค่าปรับแต่งเดิมทั้งหมด อ่านผลกระทบและเก็บสำรองไว้นอกเครื่องก่อนยืนยัน
 
 ## จัดการ Nginx service
