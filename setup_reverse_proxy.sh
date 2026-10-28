@@ -469,3 +469,6 @@ for ((i=0; i<APP_COUNT; i++)); do printf 'เว็บลูก: %s://%s/%s/ →
 printf '\nถ้าใช้ Cloudflare Tunnel ให้กำหนด ingress service เป็น http://127.0.0.1:%s แล้ว restart cloudflared\n' "$LISTEN_PORT"
 printf 'ตรวจ log: sudo journalctl -u nginx -n 50 --no-pager\n'
 printf 'คอนฟิก: %s\n' "$CONF_FILE"
+printf 'หากต้องแก้คอนฟิกเอง: sudo nano %s\n' "$CONF_FILE"
+printf 'หลังแก้คอนฟิก: sudo nginx -t && sudo systemctl reload nginx\n'
+printf 'หมายเหตุ: การรัน wizard รอบถัดไปจะสร้างไฟล์คอนฟิกนี้ใหม่ โดยสำรองไฟล์เดิมไว้ใน %s\n' "$BACKUP_DIR"
