@@ -510,6 +510,11 @@ BUFFERS
     printf '        proxy_pass %s;\n        proxy_http_version 1.1;\n        proxy_set_header Host %s;\n' "$asset_origin" "$asset_header"
     printf '        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto %s;\n        proxy_set_header X-Forwarded-Host $host;\n        proxy_ssl_server_name on;\n        proxy_ssl_name $proxy_host;\n        proxy_redirect off;\n    }\n' "$FORWARDED_PROTO_VALUE"
   done
+  cat <<'ASSET_MARKERS'
+
+    # BEGIN OPTIONAL ASSET PATH ROUTES (managed by add_asset_path.sh)
+    # END OPTIONAL ASSET PATH ROUTES
+ASSET_MARKERS
   if [[ $AUTO_ASSET_ROUTING == true ]]; then
     cat <<'ASSET'
 

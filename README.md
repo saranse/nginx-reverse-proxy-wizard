@@ -77,6 +77,17 @@ sudo ./setup_reverse_proxy.sh
 
 path ที่ลงท้ายด้วย `/` จะครอบคลุมทุกไฟล์ใต้โฟลเดอร์นั้น ส่วน path ที่ไม่มี `/` ท้ายจะจับเฉพาะ URL นั้น การตั้งค่านี้เป็นการกำหนดเส้นทางใน Nginx ไม่ใช่การเปิดพอร์ต firewall
 
+### เพิ่ม path ภายหลังด้วยสคริปต์แยก
+
+หลังตั้งค่าด้วย Wizard รุ่นที่มี marker สำหรับ asset path แล้ว สามารถเพิ่ม route ทีละรายการโดยไม่ต้องตอบคำถามตั้งค่าทั้งหมด:
+
+```bash
+chmod +x add_asset_path.sh
+sudo ./add_asset_path.sh
+```
+
+กรอก path จาก Browser DevTools → Network แล้วกรอก upstream URL ของเว็บปลายทาง สคริปต์จะสำรอง `/etc/nginx/conf.d/reverse_proxy.conf`, เพิ่ม route, ตรวจ `nginx -t` และ reload Nginx หากตรวจไม่ผ่านจะคืนไฟล์เดิม หากยังไม่มี marker ให้รัน `setup_reverse_proxy.sh` รุ่นล่าสุดหนึ่งครั้งก่อน สคริปต์ Wizard รอบต่อไปจะสร้าง config ใหม่และเก็บ config ก่อนหน้าไว้ใน backup
+
 ถ้าใช้ Cloudflare Tunnel ให้กำหนด service ของ ingress เป็น `http://127.0.0.1:80` และ restart `cloudflared` หลังตั้งค่าเสร็จ DNS ของโดเมนต้องชี้เข้าระบบที่ให้บริการด้วย
 
 ## ไฟล์และการสำรองค่า
