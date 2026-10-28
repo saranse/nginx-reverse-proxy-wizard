@@ -279,6 +279,7 @@ if [[ $ASSET_MODE == n || $ASSET_MODE == no ]]; then AUTO_ASSET_ROUTING=false; f
 # Proxy defaults support HTTP/1.1, WebSockets, forwarding headers, and upstream TLS SNI.
 proxy_block() {
   local url=$1 host_header=$2 location_name=$3 strip_prefix=${4:-false}
+  local native_asset_code=${5-}
   local pass_url=$url
   [[ $strip_prefix == true ]] && pass_url="${url%/}/"
   cat <<BLOCK
@@ -289,6 +290,12 @@ BLOCK
       route_code=$((418+route_i)); route_regex=${APP_PATHS[$route_i]//./\\.}
       printf '        if ($http_referer ~* "/%s(?:/|$)") { return %d; }\n' "$route_regex" "$route_code"
     done
+  fi
+  if [[ -n $native_asset_code && $AUTO_ASSET_ROUTING == true ]]; then
+    # Sec-Fetch-Dest classifies browser resources without guessing their names
+    # or directory. Extension matching covers older clients without Fetch Metadata.
+    printf '        if ($http_sec_fetch_dest ~* "^(audio|audioworklet|font|image|manifest|object|paintworklet|script|sharedworker|style|track|video|worker|xslt)$") { return %s; }\n' "$native_asset_code"
+    printf '        if ($uri ~* "\\.(?:avif|bmp|css|eot|gif|ico|jpe?g|js|map|mjs|otf|png|svg|ttf|wasm|webp|woff2?|mp3|mp4|ogg|webm)$") { return %s; }\n' "$native_asset_code"
   fi
   cat <<BLOCK
         proxy_pass $pass_url;
@@ -343,7 +350,10 @@ HEAD
 
 BUFFERS
   if [[ $AUTO_ASSET_ROUTING == true ]]; then
-    for ((i=0; i<APP_COUNT; i++)); do printf '    error_page %d = @rp_asset_%d;\n' "$((418+i))" "$((i+1))"; done
+    for ((i=0; i<APP_COUNT; i++)); do
+      printf '    error_page %d = @rp_asset_%d;\n' "$((418+i))" "$((i+1))"
+      printf '    error_page %d = @rp_asset_native_%d;\n' "$((460+i))" "$((i+1))"
+    done
   fi
   proxy_block "$MAIN_URL" "$MAIN_HOST_HEADER" '/' true
   # Also expose the main application's native base path. Apps that emit absolute
@@ -368,22 +378,11 @@ BUFFERS
     path=${APP_PATHS[$i]}; url=${APP_URLS[$i]}; header=${APP_HOSTS[$i]}
     printf '\n    location = /%s { return 301 /%s/$is_args$args; }\n' "$path" "$path"
     if [[ $AUTO_ASSET_ROUTING == true ]]; then
-      # Some applications render root-relative asset URLs that include the public
-      # child path (for example /siem/_next/static/...), while those files live at
-      # that exact URI on the upstream origin. The general child proxy below
-      # prepends the app base path and would turn it into /siem/fortisiem/_next/.
-      # More-specific locations preserve the original URI and send it to origin.
-      origin=${APP_ASSET_ORIGINS[$i]}
-      for asset_path in _next static assets css js fonts images img; do
-        proxy_block "$origin" "$header" "^~ /$path/$asset_path/" false
-      done
-      # Apps also commonly reference images, fonts, and standalone CSS/JS files
-      # directly under their public prefix (e.g. /siem/logo.webp). Keep those
-      # URIs unchanged instead of prepending the upstream application's base path.
-      asset_regex=${path//./\\.}
-      proxy_block "$origin" "$header" "~* ^/$asset_regex/.*\\.(?:avif|bmp|gif|ico|jpe?g|png|svg|webp|woff2?|ttf|otf|eot|css|js|map)$" false
+      native_asset_code=$((460+i))
+    else
+      native_asset_code=''
     fi
-    proxy_block "$url" "$header" "/$path/" true
+    proxy_block "$url" "$header" "/$path/" true "$native_asset_code"
     native=${APP_BASE_PATHS[$i]#/}; native=${native%/}
     if [[ -n $native && $native != "$path" ]]; then
       conflict=false
@@ -427,6 +426,12 @@ ASSET
       if [[ -n $rewrite_base ]]; then printf '        rewrite ^ %s$uri break;\n' "$rewrite_base"; fi
       printf '        proxy_pass %s;\n        proxy_http_version 1.1;\n        proxy_set_header Host %s;\n' "$origin" "$header"
       printf '        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto %s;\n        proxy_ssl_server_name on;\n        proxy_ssl_name $proxy_host;\n    }\n' "$FORWARDED_PROTO_VALUE"
+
+      # Browser-classified resources under the public child path keep their URI
+      # unchanged. This also covers arbitrary image names and nested asset folders.
+      printf '\n    location @rp_asset_native_%d {\n' "$((i+1))"
+      printf '        proxy_pass %s;\n        proxy_http_version 1.1;\n        proxy_set_header Host %s;\n' "$origin" "$header"
+      printf '        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto %s;\n        proxy_set_header X-Forwarded-Host $host;\n        proxy_ssl_server_name on;\n        proxy_ssl_name $proxy_host;\n        proxy_redirect off;\n    }\n' "$FORWARDED_PROTO_VALUE"
     done
   fi
   printf '}\n'
