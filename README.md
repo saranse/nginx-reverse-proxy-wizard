@@ -11,7 +11,7 @@
 ## ความสามารถ
 
 - ติดตั้ง Nginx และเครื่องมือดูพอร์ตเมื่อยังไม่มี
-- เลือกให้ Nginx รับ HTTP ที่พอร์ต 80, HTTPS ที่ 443 หรือ HTTP บนพอร์ตที่กำหนดเอง
+- เลือก Cloudflare/Tunnel, HTTP หรือ HTTPS ที่ Nginx; โหมด HTTPS จะค้นหา certificate ที่ตรงกับโดเมนในตำแหน่งมาตรฐานให้อัตโนมัติ
 - ตั้งค่า upstream หลัก และเว็บเพิ่มเติมใต้ subpath ได้สูงสุด 20 เว็บ
 - ส่งต่อ WebSocket และ forwarding headers พร้อมเปิด TLS SNI สำหรับ upstream HTTPS
 - สร้าง alias สำหรับ base path ของ upstream และเลือกเปิดการ route ไฟล์/คำขอที่ใช้ root-relative URL โดยอาศัย Referer
@@ -24,7 +24,7 @@
 - Linux ที่ใช้ `systemd`
 - รันด้วย `sudo` หรือ root
 - ติดตั้ง Nginx เองหรือใช้ระบบติดตั้งอัตโนมัติของสคริปต์บน Ubuntu/Debian, Linux Mint, Pop!_OS และตระกูล RHEL ที่รองรับ (เช่น AlmaLinux, Rocky Linux, RHEL, CentOS, Fedora, Oracle Linux)
-- upstream ของแต่ละเว็บต้องเข้าถึงได้จากเครื่อง Nginx
+- upstream ของแต่ละเว็บต้องเข้าถึงได้จากเครื่อง Nginx และต้องชี้ไปยังแอปหลังบ้าน ไม่ใช่ IP/พอร์ตรับเว็บของ Nginx เอง
 - DNS/Cloudflare/Tunnel และ TLS certificate ต้องเตรียมตามรูปแบบที่เลือก
 
 สคริปต์ไม่รองรับการติดตั้งอัตโนมัติบน Linux distribution อื่น แต่ถ้ามี Nginx และ `systemd` อยู่แล้ว อาจใช้งานได้หลังตรวจสอบ environment ด้วยตนเอง
@@ -48,11 +48,11 @@ sudo ./setup_reverse_proxy.sh
 2. **รูปแบบการเชื่อมต่อเข้า Nginx**
    - ตัวเลือก 1: ผู้ใช้เข้า HTTPS ผ่าน Cloudflare WAF/Tunnel แล้ว Tunnel ส่ง HTTP มาที่ Nginx พอร์ต 80 (ค่าเริ่มต้น)
    - ตัวเลือก 2: HTTP เข้า Nginx พอร์ต 80
-   - ตัวเลือก 3: Nginx รับ HTTPS ที่พอร์ต 443 ต้องมี certificate และ private key ที่อ่านได้
+   - ตัวเลือก 3: Nginx รับ HTTPS ที่พอร์ต 443; สคริปต์ค้นหา certificate/key ของโดเมนให้อัตโนมัติ หากไม่พบจึงให้ระบุพาธเอง
    - ตัวเลือก 4: HTTP บนพอร์ตอื่น เช่น 8080; ใช้เมื่อ Tunnel หรือระบบด้านหน้าส่งมายังพอร์ตนั้น
 3. **Upstream หลัก** เช่น `http://127.0.0.1:3000/` หรือ `http://127.0.0.1:3000/siem/`
 4. **เว็บเพิ่มเติม** (ถ้ามี): path ภายนอก เช่น `report` และ URL ต้นทาง เช่น `http://192.0.2.20:8080/remote/`
-5. **ตัวเลือก Host header** ให้เลือกตามความต้องการของแอปต้นทาง
+5. **Upstream ของเว็บหลัก** ต้องเป็น IP/พอร์ตของแอปหลังบ้าน เช่น `http://127.0.0.1:3000/`; อย่าใส่ URL หน้าเว็บของ Nginx เอง เพราะจะเกิดการวนกลับ
 
 ใส่ upstream ในรูปแบบ `http://host[:port][/base/path/]` หรือ `https://host[:port][/base/path/]` ห้ามมี query string หรือ fragment (`?` หรือ `#`). ตัวอย่าง IP ในเอกสารนี้ใช้ช่วงที่สงวนไว้สำหรับตัวอย่างเท่านั้น
 
