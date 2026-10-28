@@ -377,8 +377,13 @@ BUFFERS
       for asset_path in _next static assets css js fonts images img; do
         proxy_block "$origin" "$header" "^~ /$path/$asset_path/" false
       done
+      # Apps also commonly reference images, fonts, and standalone CSS/JS files
+      # directly under their public prefix (e.g. /siem/logo.webp). Keep those
+      # URIs unchanged instead of prepending the upstream application's base path.
+      asset_regex=${path//./\\.}
+      proxy_block "$origin" "$header" "~* ^/$asset_regex/.*\\.(?:avif|bmp|gif|ico|jpe?g|png|svg|webp|woff2?|ttf|otf|eot|css|js|map)$" false
     fi
-    proxy_block "$url" "$header" "^~ /$path/" true
+    proxy_block "$url" "$header" "/$path/" true
     native=${APP_BASE_PATHS[$i]#/}; native=${native%/}
     if [[ -n $native && $native != "$path" ]]; then
       conflict=false
