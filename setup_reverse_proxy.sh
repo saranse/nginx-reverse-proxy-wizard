@@ -332,17 +332,23 @@ BUFFERS
     native=${APP_BASE_PATHS[$i]#/}; native=${native%/}
     if [[ -n $native && $native != "$path" ]]; then
       conflict=false
-      for configured_path in "${APP_PATHS[@]}"; do
+      for ((configured_i=0; configured_i<APP_COUNT; configured_i++)); do
+        [[ $configured_i == $i ]] && continue
+        configured_path=${APP_PATHS[$configured_i]}
         if [[ $native == "$configured_path" || $native == "$configured_path/"* || $configured_path == "$native/"* ]]; then conflict=true; fi
       done
-      if [[ -n ${main_native:-} && ( $native == "$main_native" || $native == "$main_native/"* || $main_native == "$native/"* ) ]]; then conflict=true; fi
+      if [[ -n ${main_native:-} && ( $native == "$main_native" || $native == "$main_native/"* || $main_native == "$native/"* ) ]]; then
+        # The same upstream path can be shared by the main app and a child app.
+        # Keep one native alias when both entries target the same URL.
+        if [[ $native != "$main_native" || ${MAIN_URL%/} != ${url%/} ]]; then conflict=true; fi
+      fi
       for ((other_i=0; other_i<APP_COUNT; other_i++)); do
         [[ $other_i == $i ]] && continue
         other_native=${APP_BASE_PATHS[$other_i]#/}; other_native=${other_native%/}
         if [[ -n $other_native && ( $native == "$other_native" || $native == "$other_native/"* || $other_native == "$native/"* ) ]]; then conflict=true; fi
       done
       if [[ $conflict == false ]]; then
-        printf '\n    # Native upstream path alias, like ProxyPass for the app\047s own URL prefix.\n'
+        printf '\n    # Native upstream path alias. A more-specific alias can sit below the public child path.\n'
         printf '    location = /%s { return 301 /%s/$is_args$args; }\n' "$native" "$native"
         proxy_block "$url" "$header" "^~ /$native/" true
       else
