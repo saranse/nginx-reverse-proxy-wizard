@@ -14,7 +14,7 @@
 - เลือก Cloudflare/Tunnel, HTTP หรือ HTTPS ที่ Nginx; โหมด HTTPS จะค้นหา certificate ที่ตรงกับโดเมนในตำแหน่งมาตรฐานให้อัตโนมัติ
 - ตั้งค่า upstream หลัก และเว็บเพิ่มเติมใต้ subpath ได้สูงสุด 20 เว็บ
 - ส่งต่อ WebSocket และ forwarding headers พร้อมเปิด TLS SNI สำหรับ upstream HTTPS
-- สร้าง alias สำหรับ base path ของ upstream และช่วย route asset แบบ root-relative รวมถึง path มาตรฐานอย่าง `/_next/`, `/static/`, `/assets/`, `/css/`, `/js/`, `/fonts/` และไฟล์รูปที่อยู่ใต้ path เว็บลูก
+- สร้าง alias สำหรับ base path ของ upstream และ route browser assets โดยดู `Sec-Fetch-Dest` พร้อม fallback จากนามสกุลไฟล์ จึงไม่ต้องระบุชื่อโฟลเดอร์หรือชื่อรูปไว้ล่วงหน้า
 - สำรอง reverse proxy config เดิมก่อนแทนที่ และทดสอบด้วย `nginx -t` ก่อน reload
 - เปิดเฉพาะพอร์ตที่เลือกใน UFW/firewalld เมื่อ firewall นั้นเปิดใช้อยู่แล้ว โดยไม่เปิด firewall ให้เอง
 - รองรับการตั้งค่า SELinux เบื้องต้นเมื่อพบเครื่องมือที่เกี่ยวข้อง
@@ -107,7 +107,7 @@ sudo ss -ltnp
 ```
 
 - หากเห็น `502 Bad Gateway` ให้ตรวจว่า upstream ทำงานและเข้าถึงได้จากเครื่อง Nginx
-- หากเว็บใต้ path โหลด CSS/JS/รูปไม่ครบ ให้ตรวจ URL ที่แอปสร้างใน Browser DevTools → Network และเทียบกับ URL ที่เปิดได้จากเครื่อง Nginx สคริปต์รองรับ resource path ทั่วไป เช่น `/_next/`, `/static/` และไฟล์รูปใต้ path เว็บลูก; แอปที่ใช้ asset prefix แบบกำหนดเองอาจต้องเพิ่ม alias ให้ตรงกับ path ที่แอปสร้าง และตรวจการตั้งค่า base path ของแอปด้วย
+- หากเว็บใต้ path โหลด CSS/JS/รูปไม่ครบ ให้ตรวจ URL ที่แอปสร้างใน Browser DevTools → Network และเทียบกับ URL ที่เปิดได้จากเครื่อง Nginx สคริปต์จะ route browser assets โดยอัตโนมัติจาก `Sec-Fetch-Dest` และใช้นามสกุลไฟล์เป็น fallback ส่วน API ที่ไม่มีชนิด resource ชัดเจนอาจต้องกำหนด base path ให้ตรงกับแอป เพราะ URL เดียวกันอาจเป็นได้ทั้งหน้าเว็บและ API
 - หากพอร์ตถูกใช้งานอยู่ ให้เลือกพอร์ต Nginx อื่นหรือจัดการ service ที่ครอบครองพอร์ตนั้นก่อน
 - หากเปิด HTTPS ที่ Nginx ตรวจว่า certificate/key ถูกต้องและอ่านได้ รวมถึง certificate ตรงกับโดเมน
 - หากใช้ SELinux แล้ว proxy ไป upstream ไม่ได้ ให้ตรวจ boolean `httpd_can_network_connect` และสิทธิ์พอร์ตของ SELinux
