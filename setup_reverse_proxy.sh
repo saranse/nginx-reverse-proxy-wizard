@@ -14,6 +14,49 @@ die() { printf "${RED}%s${NC}\n" "$*" >&2; exit 1; }
 [[ ${EUID:-$(id -u)} -eq 0 ]] || die 'กรุณารันด้วย sudo: sudo ./setup_reverse_proxy.sh'
 command -v systemctl >/dev/null 2>&1 || die 'ไม่พบ systemctl สคริปต์นี้ต้องใช้กับ Linux ที่ใช้ systemd'
 
+# Show the currently active Nginx routing before the wizard changes anything.
+show_existing_nginx_config() {
+  printf '\nคอนฟิก Nginx ปัจจุบัน:\n'
+  if command -v nginx >/dev/null 2>&1 && nginx -t >/dev/null 2>&1; then
+    nginx -T 2>/dev/null | awk '
+      /^# configuration file / {
+        source = $0
+        active = (source ~ /^# configuration file \/etc\/nginx\//)
+        if (active) { print "\n" source }
+        next
+      }
+      active && /^[[:space:]]*upstream[[:space:]]+[[:alnum:]_-]+[[:space:]]*\{/ {
+        line = $0
+        sub(/^[[:space:]]+/, "", line)
+        print "  " line
+        in_upstream = 1
+        next
+      }
+      in_upstream && /^[[:space:]]*server[[:space:]]/ {
+        line = $0
+        sub(/^[[:space:]]+/, "", line)
+        print "    " line
+        next
+      }
+      in_upstream && /^[[:space:]]*}/ { in_upstream = 0; next }
+      active && /^[[:space:]]*(listen|server_name|location|proxy_pass|root|ssl_certificate|ssl_certificate_key|upstream)[[:space:]={]/ {
+        line = $0
+        sub(/^[[:space:]]+/, "", line)
+        sub(/\?.*/, "?[query redacted]", line)
+        print "  " line
+      }
+      END { if (!active) print "ไม่พบ active config ใต้ /etc/nginx/" }
+    '
+  elif [[ -f $CONF_FILE ]]; then
+    warn 'คอนฟิกปัจจุบันมี syntax error หรืออ่านผ่าน nginx -T ไม่ได้; แสดงเฉพาะ routing directives ในไฟล์ที่ wizard จัดการ'
+    awk '/^[[:space:]]*(listen|server_name|location|proxy_pass|root|ssl_certificate|ssl_certificate_key)[[:space:]={]/ { line=$0; sub(/^[[:space:]]+/, "", line); sub(/\?.*/, "?[query redacted]", line); print "  " line }' "$CONF_FILE"
+  else
+    printf 'ยังไม่พบ Nginx config ที่ใช้งานได้\n'
+  fi
+  if [[ -f $CONF_FILE ]]; then printf '\nไฟล์ที่ wizard จะจัดการ: %s\n' "$CONF_FILE"; fi
+}
+show_existing_nginx_config
+
 # Install Nginx and the port-inspection utility if they are missing.
 if [[ -r /etc/os-release ]]; then . /etc/os-release; else die 'ไม่พบ /etc/os-release จึงระบุ Linux distribution ไม่ได้'; fi
 if command -v nginx >/dev/null 2>&1 || [[ -d /etc/nginx ]]; then
@@ -219,7 +262,7 @@ fi
 
 printf '\nเว็บหลักที่ /:\n'
 printf 'ใส่ URL ของแอปหลังบ้าน (IP/พอร์ตของแอป) ห้ามใส่ IP/พอร์ตของ Nginx เครื่องนี้\n'
-printf 'ตัวอย่าง: http://192.168.250.250:3000/siem/fortisiem/\n'
+printf 'ตัวอย่าง: http://127.0.0.1:3000/app/ หรือ https://portal.example.com/\n'
 read_value 'URL เว็บหลัก (ไม่ใส่ query string): ' 'http://127.0.0.1:3000/'
 MAIN_URL=$REPLY
 parse_upstream "$MAIN_URL" || die 'URL เว็บหลักไม่ถูกต้อง; ใช้ http(s)://host[:port][/base/path/] โดยไม่ใส่ query string หรือ fragment'
@@ -227,7 +270,7 @@ MAIN_UPSTREAM_HOST=$UPSTREAM_HOST
 MAIN_UPSTREAM_PORT=$UPSTREAM_PORT
 MAIN_BASE_PATH=$UPSTREAM_BASE_PATH
 if [[ ${MAIN_UPSTREAM_HOST,,} == ${DOMAIN,,} && $MAIN_UPSTREAM_PORT == "$LISTEN_PORT" ]]; then
-  die "Upstream ชี้กลับมาที่ Nginx เครื่องนี้ ($DOMAIN:$LISTEN_PORT) กรุณาใส่ IP/พอร์ตของแอปหลังบ้าน เช่น http://127.0.0.1:3000/ หรือ http://192.168.250.250:3000/"
+  die "Upstream ชี้กลับมาที่ Nginx เครื่องนี้ ($DOMAIN:$LISTEN_PORT) กรุณาใส่ IP/พอร์ตของแอปหลังบ้าน เช่น http://127.0.0.1:3000/ หรือ http://10.0.0.20:3000/"
 fi
 
 if [[ $MAIN_UPSTREAM_HOST =~ ^[0-9.]+$ || $MAIN_UPSTREAM_HOST == \[*\] ]]; then MAIN_HOST_HEADER='$host'; else MAIN_HOST_HEADER='$proxy_host'; fi
@@ -357,7 +400,7 @@ BUFFERS
   fi
   proxy_block "$MAIN_URL" "$MAIN_HOST_HEADER" '/' true
   # Also expose the main application's native base path. Apps that emit absolute
-  # URLs such as /siem/... need this just like sub-apps need /remote/... aliases.
+  # Root-relative URLs under the app's native base path need a direct alias.
   main_native=${MAIN_BASE_PATH#/}; main_native=${main_native%/}
   if [[ -n $main_native ]]; then
     main_alias_conflict=false
