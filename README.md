@@ -66,6 +66,8 @@ sudo ./setup_reverse_proxy.sh
 
 เลือกตัวเลือก 1, ใส่ upstream หลักตามตัวอย่าง, จำนวนเว็บเพิ่มเติมเป็น `1`, แล้วกรอก path `report` กับ upstream ของเว็บรายงาน จากนั้นยืนยันตัวเลือก asset routing ตามความเหมาะสมกับแอป
 
+ถ้าใช้ Cloudflare Tunnel ให้กำหนด service ของ ingress เป็น `http://127.0.0.1:80` และ restart `cloudflared` หลังตั้งค่าเสร็จ DNS ของโดเมนต้องชี้เข้าระบบที่ให้บริการด้วย
+
 ## ไฟล์และการสำรองค่า
 
 สคริปต์สร้างหรือแทนที่:
@@ -76,6 +78,24 @@ sudo ./setup_reverse_proxy.sh
 ก่อนแทนที่ไฟล์เดิม สคริปต์จะสำรองไว้ และจะคืนค่า config เดิมหาก `nginx -t` ไม่ผ่าน จากนั้นจึง enable และ reload/start Nginx
 
 หากเลือก purge Nginx เดิม สคริปต์จะขอให้พิมพ์ `PURGE NGINX` เพื่อยืนยัน และสำรอง `/etc/nginx` ไว้ใต้ `/root/nginx-backups/` ก่อนถอนแพ็กเกจและลบ `/etc/nginx` การ purge อาจกระทบ virtual hosts และค่าปรับแต่งเดิมทั้งหมด อ่านผลกระทบและเก็บสำรองไว้นอกเครื่องก่อนยืนยัน
+
+## จัดการ Nginx service
+
+ใช้ `systemctl` เพื่อควบคุม service ของ Nginx:
+
+```bash
+sudo systemctl start nginx    # เริ่ม service
+sudo systemctl stop nginx     # หยุด service
+sudo systemctl status nginx   # ดูสถานะ service
+sudo systemctl restart nginx  # หยุดแล้วเริ่ม service ใหม่
+```
+
+หลังแก้ configuration แนะนำให้ตรวจ syntax ก่อน แล้วจึง reload เพื่อให้ Nginx โหลดค่าใหม่โดยไม่หยุดรับคำขอ:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
 
 ## ตรวจสอบและแก้ปัญหา
 
