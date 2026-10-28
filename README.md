@@ -15,6 +15,7 @@
 - ตั้งค่า upstream หลัก และเว็บเพิ่มเติมใต้ subpath ได้สูงสุด 20 เว็บ
 - ส่งต่อ WebSocket และ forwarding headers พร้อมเปิด TLS SNI สำหรับ upstream HTTPS
 - สร้าง alias สำหรับ base path ของ upstream และ route browser assets โดยดู `Sec-Fetch-Dest` พร้อม fallback จากนามสกุลไฟล์ จึงไม่ต้องระบุชื่อโฟลเดอร์หรือชื่อรูปไว้ล่วงหน้า
+- เพิ่ม path override สำหรับไฟล์/API ที่ต้องส่งไปยังเว็บปลายทางเจาะจงได้จาก Wizard เช่น `/assets/` หรือ `/logo.webp`
 - สำรอง reverse proxy config เดิมก่อนแทนที่ และทดสอบด้วย `nginx -t` ก่อน reload
 - เปิดเฉพาะพอร์ตที่เลือกใน UFW/firewalld เมื่อ firewall นั้นเปิดใช้อยู่แล้ว โดยไม่เปิด firewall ให้เอง
 - รองรับการตั้งค่า SELinux เบื้องต้นเมื่อพบเครื่องมือที่เกี่ยวข้อง
@@ -68,6 +69,14 @@ sudo ./setup_reverse_proxy.sh
 
 เลือกตัวเลือก 1, ใส่ upstream หลักตามตัวอย่าง, จำนวนเว็บเพิ่มเติมเป็น `1`, แล้วกรอก path `report` กับ upstream ของเว็บรายงาน จากนั้นยืนยันตัวเลือก asset routing ตามความเหมาะสมกับแอป
 
+ถ้าไฟล์บางรายการยังถูกส่งไปผิดเว็บ ให้ดู URL ที่ล้มเหลวใน Browser DevTools → Network แล้วเพิ่ม path override ใน Wizard:
+
+1. ใส่จำนวน path ที่ต้องการเพิ่ม
+2. กรอก path ที่ browser เรียก เช่น `/assets/` สำหรับทั้งโฟลเดอร์ หรือ `/logo.webp` สำหรับไฟล์เดียว
+3. เลือกหมายเลขเว็บปลายทางจากรายการที่ Wizard แสดง
+
+path ที่ลงท้ายด้วย `/` จะครอบคลุมทุกไฟล์ใต้โฟลเดอร์นั้น ส่วน path ที่ไม่มี `/` ท้ายจะจับเฉพาะ URL นั้น การตั้งค่านี้เป็นการกำหนดเส้นทางใน Nginx ไม่ใช่การเปิดพอร์ต firewall
+
 ถ้าใช้ Cloudflare Tunnel ให้กำหนด service ของ ingress เป็น `http://127.0.0.1:80` และ restart `cloudflared` หลังตั้งค่าเสร็จ DNS ของโดเมนต้องชี้เข้าระบบที่ให้บริการด้วย
 
 ## ไฟล์และการสำรองค่า
@@ -115,6 +124,10 @@ sudo systemctl reload nginx
 
 ## ตรวจสอบและแก้ปัญหา
 
+ตัวอย่างหน้าจอ Network ที่ปิดข้อมูลระบุตัวตนแล้ว โดยยังแสดงชื่อ resource และ status ที่ใช้ตรวจสอบ:
+
+![ตัวอย่างตรวจ asset ที่โหลดไม่ผ่านใน Browser DevTools](images/assets-load-error-redacted.jpg)
+
 ```bash
 sudo nginx -t
 sudo systemctl status nginx --no-pager
@@ -123,7 +136,8 @@ sudo ss -ltnp
 ```
 
 - หากเห็น `502 Bad Gateway` ให้ตรวจว่า upstream ทำงานและเข้าถึงได้จากเครื่อง Nginx
-- หากเว็บใต้ path โหลด CSS/JS/รูปไม่ครบ ให้ตรวจ URL ที่แอปสร้างใน Browser DevTools → Network และเทียบกับ URL ที่เปิดได้จากเครื่อง Nginx สคริปต์จะ route browser assets โดยอัตโนมัติจาก `Sec-Fetch-Dest` และใช้นามสกุลไฟล์เป็น fallback ส่วน API ที่ไม่มีชนิด resource ชัดเจนอาจต้องกำหนด base path ให้ตรงกับแอป เพราะ URL เดียวกันอาจเป็นได้ทั้งหน้าเว็บและ API
+- หากเว็บใต้ path โหลด CSS/JS/รูปไม่ครบ ให้เปิด Browser DevTools → Network แล้วดู URL, status และ initiator ของรายการที่ล้มเหลว สคริปต์ route browser assets โดยอัตโนมัติจาก `Sec-Fetch-Dest` และนามสกุลไฟล์ หากตรวจพบว่า path ถูกส่งไปผิดเว็บ ให้เพิ่ม path override ใน Wizard ตามหัวข้อด้านบน หรือแก้ Nginx config ที่ `/etc/nginx/conf.d/reverse_proxy.conf`
+- ถ้ารายการล้มเหลวตอบ `404` ให้เทียบ URL เดียวกันกับ upstream โดยตรง เพื่อตรวจ base path และปลายทางที่ถูกต้อง ถ้าตอบ `500` แปลว่าคำขอไปถึงเซิร์ฟเวอร์แล้ว ให้ตรวจ log ของแอป/upstream ก่อน เพราะการเพิ่ม path route ไม่ได้แก้ข้อผิดพลาดภายในแอปโดยอัตโนมัติ
 - หากพอร์ตถูกใช้งานอยู่ ให้เลือกพอร์ต Nginx อื่นหรือจัดการ service ที่ครอบครองพอร์ตนั้นก่อน
 - หากเปิด HTTPS ที่ Nginx ตรวจว่า certificate/key ถูกต้องและอ่านได้ รวมถึง certificate ตรงกับโดเมน
 - หากใช้ SELinux แล้ว proxy ไป upstream ไม่ได้ ให้ตรวจ boolean `httpd_can_network_connect` และสิทธิ์พอร์ตของ SELinux

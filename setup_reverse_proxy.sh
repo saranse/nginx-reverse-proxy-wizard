@@ -313,11 +313,46 @@ done
 
 printf '\nAsset routing:\n'
 printf 'สคริปต์จะสร้าง native-path alias จาก upstream base path และส่ง root-relative requests ตาม Referer ไปยัง upstream ของหน้าที่เรียก\n'
-printf 'ตัวอย่าง upstream http://192.0.2.20:8080/remote/ จะได้ route /remote/ เพิ่มให้อัตโนมัติ\n'
 read_value 'เปิด auto-routing สำหรับ root-relative requests (CSS/JS/API ฯลฯ)? [Y/n]: ' 'Y'
 ASSET_MODE=${REPLY,,}
 AUTO_ASSET_ROUTING=true
 if [[ $ASSET_MODE == n || $ASSET_MODE == no ]]; then AUTO_ASSET_ROUTING=false; fi
+
+# Optional explicit path overrides for resources that need a deterministic route.
+# Paths may be exact files (/logo.webp) or prefixes (/assets/). They are rewritten
+# to the selected app's upstream base path and sent to that app's origin.
+CUSTOM_ASSET_PATHS=(); CUSTOM_ASSET_TARGETS=(); CUSTOM_ASSET_EXACT=()
+if (( APP_COUNT > 0 )); then
+  printf '\nถ้ามีไฟล์/API บาง path ยังไปผิดเว็บ ให้เพิ่ม path บังคับส่งไปยังเว็บลูกได้\n'
+  read_value 'จำนวน path เพิ่มเติม (ใส่ 0 ถ้าไม่ต้องเพิ่ม): ' '0'
+  CUSTOM_ASSET_COUNT=$REPLY
+  [[ $CUSTOM_ASSET_COUNT =~ ^[0-9]{1,2}$ ]] && (( CUSTOM_ASSET_COUNT <= 50 )) || die 'จำนวน path เพิ่มเติมต้องเป็น 0 ถึง 50'
+  for ((asset_i=1; asset_i<=CUSTOM_ASSET_COUNT; asset_i++)); do
+    printf '\nPath เพิ่มเติม #%d (เช่น /assets/ หรือ /logo.webp)\n' "$asset_i"
+    read_value '  Path ที่ browser เรียก: ' ''
+    asset_path=${REPLY#/}
+    asset_exact=false
+    [[ $asset_path == */ ]] || asset_exact=true
+    asset_path=${asset_path%/}
+    [[ $asset_path =~ ^[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$ ]] || die 'Path เพิ่มเติมไม่ถูกต้อง; ใช้ตัวอักษร/ตัวเลข . _ ~ - และ / โดยไม่ใส่ query string'
+    [[ ! /$asset_path/ =~ /\.\./|/\./ ]] || die 'Path เพิ่มเติมห้ามมี segment . หรือ ..'
+    for existing in "${CUSTOM_ASSET_PATHS[@]-}"; do [[ $existing != "$asset_path" ]] || die "Path เพิ่มเติมซ้ำ: /$asset_path"; done
+    for existing in "${APP_PATHS[@]}"; do [[ $asset_path != "$existing" ]] || die "Path นี้ชนกับ path เว็บลูก /$existing/; เลือก path ของ asset ที่เฉพาะเจาะจงกว่า"; done
+    main_native_check=${MAIN_BASE_PATH#/}; main_native_check=${main_native_check%/}
+    [[ -z $main_native_check || $asset_path != "$main_native_check" ]] || die "Path นี้ชนกับ native path เว็บหลัก /$main_native_check/"
+    for existing in "${APP_BASE_PATHS[@]}"; do
+      existing=${existing#/}; existing=${existing%/}
+      [[ -z $existing || $asset_path != "$existing" ]] || die "Path นี้ชนกับ native path ของเว็บลูก /$existing/"
+    done
+    printf '  เลือกเว็บปลายทาง:\n  [0] เว็บหลัก: %s\n' "$MAIN_URL"
+    for ((asset_app=0; asset_app<APP_COUNT; asset_app++)); do printf '  [%d] /%s/ → %s\n' "$((asset_app+1))" "${APP_PATHS[$asset_app]}" "${APP_URLS[$asset_app]}"; done
+    read_value "  ส่ง path นี้ไปเว็บหมายเลข [0-$APP_COUNT]: " '0'
+    [[ $REPLY =~ ^[0-9]{1,2}$ ]] || die 'หมายเลขเว็บปลายทางไม่ถูกต้อง'
+    asset_target=$((10#$REPLY))
+    (( asset_target <= APP_COUNT )) || die 'หมายเลขเว็บปลายทางไม่ถูกต้อง'
+    CUSTOM_ASSET_PATHS+=("$asset_path"); CUSTOM_ASSET_TARGETS+=("$asset_target"); CUSTOM_ASSET_EXACT+=("$asset_exact")
+  done
+fi
 
 # Proxy defaults support HTTP/1.1, WebSockets, forwarding headers, and upstream TLS SNI.
 proxy_block() {
@@ -455,6 +490,25 @@ BUFFERS
         warn "ไม่ได้สร้าง native-path alias /$native/ เพราะชนกับ path เว็บลูกที่ตั้งไว้"
       fi
     fi
+  done
+  for ((asset_i=0; asset_i<${#CUSTOM_ASSET_PATHS[@]}; asset_i++)); do
+    asset_path=${CUSTOM_ASSET_PATHS[$asset_i]}; asset_target=${CUSTOM_ASSET_TARGETS[$asset_i]}
+    if (( asset_target == 0 )); then
+      asset_url=$MAIN_URL; asset_header=$MAIN_HOST_HEADER; asset_base_path=$MAIN_BASE_PATH
+    else
+      asset_index=$((asset_target-1)); asset_url=${APP_URLS[$asset_index]}; asset_header=${APP_HOSTS[$asset_index]}; asset_base_path=${APP_BASE_PATHS[$asset_index]}
+    fi
+    asset_scheme=${asset_url%%://*}; asset_authority=${asset_url#*://}; asset_authority=${asset_authority%%/*}
+    asset_origin="${asset_scheme}://${asset_authority}"
+    asset_rewrite_base=${asset_base_path%/}
+    if [[ ${CUSTOM_ASSET_EXACT[$asset_i]} == true ]]; then
+      printf '\n    location = /%s {\n' "$asset_path"
+    else
+      printf '\n    location ^~ /%s/ {\n' "$asset_path"
+    fi
+    if [[ -n $asset_rewrite_base ]]; then printf '        rewrite ^ %s$uri break;\n' "$asset_rewrite_base"; fi
+    printf '        proxy_pass %s;\n        proxy_http_version 1.1;\n        proxy_set_header Host %s;\n' "$asset_origin" "$asset_header"
+    printf '        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto %s;\n        proxy_set_header X-Forwarded-Host $host;\n        proxy_ssl_server_name on;\n        proxy_ssl_name $proxy_host;\n        proxy_redirect off;\n    }\n' "$FORWARDED_PROTO_VALUE"
   done
   if [[ $AUTO_ASSET_ROUTING == true ]]; then
     cat <<'ASSET'
