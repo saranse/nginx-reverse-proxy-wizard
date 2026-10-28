@@ -367,6 +367,17 @@ BUFFERS
   for ((i=0; i<APP_COUNT; i++)); do
     path=${APP_PATHS[$i]}; url=${APP_URLS[$i]}; header=${APP_HOSTS[$i]}
     printf '\n    location = /%s { return 301 /%s/$is_args$args; }\n' "$path" "$path"
+    if [[ $AUTO_ASSET_ROUTING == true ]]; then
+      # Some applications render root-relative asset URLs that include the public
+      # child path (for example /siem/_next/static/...), while those files live at
+      # that exact URI on the upstream origin. The general child proxy below
+      # prepends the app base path and would turn it into /siem/fortisiem/_next/.
+      # More-specific locations preserve the original URI and send it to origin.
+      origin=${APP_ASSET_ORIGINS[$i]}
+      for asset_path in _next static assets css js fonts images img; do
+        proxy_block "$origin" "$header" "^~ /$path/$asset_path/" false
+      done
+    fi
     proxy_block "$url" "$header" "^~ /$path/" true
     native=${APP_BASE_PATHS[$i]#/}; native=${native%/}
     if [[ -n $native && $native != "$path" ]]; then
