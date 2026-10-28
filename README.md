@@ -27,9 +27,11 @@
 
 ## ติดตั้งและเริ่มใช้งาน
 
-ดาวน์โหลดไฟล์จาก repository แล้วรัน:
+ดาวน์โหลด repository แล้วเข้าโฟลเดอร์สคริปต์:
 
 ```bash
+git clone https://github.com/saranse/nginx-reverse-proxy-wizard.git
+cd nginx-reverse-proxy-wizard
 chmod +x setup_reverse_proxy.sh
 sudo ./setup_reverse_proxy.sh
 ```
