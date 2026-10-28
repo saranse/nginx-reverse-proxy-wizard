@@ -86,7 +86,7 @@ chmod +x add_asset_path.sh
 sudo ./add_asset_path.sh
 ```
 
-กรอก path จาก Browser DevTools → Network แล้วกรอก upstream URL ของเว็บปลายทาง สคริปต์จะสำรอง `/etc/nginx/conf.d/reverse_proxy.conf`, เพิ่ม route, ตรวจ `nginx -t` และ reload Nginx หากตรวจไม่ผ่านจะคืนไฟล์เดิม หากยังไม่มี marker ให้รัน `setup_reverse_proxy.sh` รุ่นล่าสุดหนึ่งครั้งก่อน สคริปต์ Wizard รอบต่อไปจะสร้าง config ใหม่และเก็บ config ก่อนหน้าไว้ใน backup
+กรอก path จาก Browser DevTools → Network แล้วกรอก upstream URL ของเว็บปลายทาง สคริปต์จะสำรอง `/etc/nginx/conf.d/reverse_proxy.conf`, เพิ่ม route, ตรวจ `nginx -t` และ reload Nginx หากตรวจไม่ผ่านจะคืนไฟล์เดิม ใช้กับ config เดิมที่ Wizard สร้างได้โดยไม่ต้องตั้ง Wizard ใหม่ ส่วน config ที่มีหลาย `server` block จะหยุดไว้ให้ตรวจเอง การรัน Wizard รอบถัดไปจะสร้าง config ใหม่และเก็บ config ก่อนหน้าไว้ใน backup
 
 ถ้าใช้ Cloudflare Tunnel ให้กำหนด service ของ ingress เป็น `http://127.0.0.1:80` และ restart `cloudflared` หลังตั้งค่าเสร็จ DNS ของโดเมนต้องชี้เข้าระบบที่ให้บริการด้วย
 
